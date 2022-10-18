@@ -2,7 +2,7 @@
   "build": {
     "beforeBuildCommand": "npm run build",
     "beforeDevCommand": "npm start",
-    "devPath": "htttp://localhost:3000/",
+    "devPath": "http://localhost:3000/",
     "distDir": "../build"
   },
   "package": {
@@ -15,7 +15,7 @@
     },
     "bundle": {
       "active": true,
-      "category": "DeveloperTool",
+      "category": "Application",
       "copyright": "",
       "deb": {
         "depends": []
@@ -28,8 +28,8 @@
         "icons/icon.icns",
         "icons/icon.ico"
       ],
-      "identifier": "com.tauri.dev",
-      "longDescription": "",
+      "identifier": "com.cryptile",
+      "longDescription": "A Desktop App to encrypt and decrypt your files with a secure password",
       "macOS": {
         "entitlements": null,
         "exceptionDomain": "",
@@ -56,9 +56,9 @@
       {
         "fullscreen": false,
         "height": 600,
-        "resizable": true,
+        "resizable": false,
         "title": "Cryptile",
-        "width": 800
+        "width": 1067
       }
     ]
   }
