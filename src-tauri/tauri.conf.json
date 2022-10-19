@@ -28,7 +28,7 @@
         "icons/icon.icns",
         "icons/icon.ico"
       ],
-      "identifier": "com.cryptile",
+      "identifier": "com.cryptile.gui",
       "longDescription": "A Desktop App to encrypt and decrypt your files with a secure password",
       "macOS": {
         "entitlements": null,
