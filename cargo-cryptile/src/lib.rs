@@ -1,7 +1,7 @@
 use std::io::{Read, Write};
 use std::fs::File;
-use std::io::{Error, ErrorKind};
-use aes::Aes128;
+use std::io::{Error};
+use aes::Aes256;
 use aes::cipher::{
     BlockEncrypt, BlockDecrypt, KeyInit,
     generic_array::GenericArray,
@@ -37,14 +37,14 @@ fn read_bytes_as_blocks(filename: &str, stage: Stage) -> Result<Vec<[u8; 16]>, E
     Ok(bytes)
 }
 
-fn cipher_init(key_str: &str) -> Aes128 {
-    let mut key = [0u8; 16];
+fn cipher_init(key_str: &str) -> Aes256 {
+    let mut key = [0u8; 32];
     for (i, byte) in key_str.bytes().enumerate() {
         key[i] = byte;
     }
 
     let key = GenericArray::from(key);
-    Aes128::new(&key)
+    Aes256::new(&key)
 }
 
 fn encrypt_bytes(blocks: &mut Vec<[u8; 16]>, key: &str) {
@@ -115,7 +115,7 @@ fn write_bytes_from_blocks(filename: &str, blocks: &Vec<[u8; 16]>, stage: Stage)
 #[cfg(test)]
 mod tests {
     use super::*;
-    const TEST_KEY: &str = "0123456789ABCDEF";
+    const TEST_KEY: &str = "0123456789ABCDEF0123456789ABCDEF";
 
     #[test]
     fn encrypt_file() {
@@ -135,7 +135,7 @@ mod tests {
         println!("bytes: {:?}", blocks);
         let padding = decrypt_bytes(&mut blocks, TEST_KEY);
         println!("decrypted bytes: {:?}\npadding:{}", blocks, padding);
-        write_bytes_from_blocks("test2.txt", &blocks, Stage::Decrypt(Some(padding)))
+        write_bytes_from_blocks("test_decrypted.txt", &blocks, Stage::Decrypt(Some(padding)))
             .expect("Some error in writing");
     }
 }

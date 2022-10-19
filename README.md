@@ -3,7 +3,7 @@
 
 ## (in develpoment)
 
-- Uses AES128 Encryption
+- Uses AES256 Encryption
 - written in Rust :crab:
 - GUI made using Tauri and React
   
