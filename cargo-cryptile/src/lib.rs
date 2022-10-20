@@ -1,11 +1,12 @@
 use std::io::{Read, Write};
 use std::fs::File;
-use std::io::{Error};
+use std::io::{Error, ErrorKind};
 use aes::Aes256;
 use aes::cipher::{
     BlockEncrypt, BlockDecrypt, KeyInit,
     generic_array::GenericArray,
 };
+
 
 enum Stage {
     Encrypt,
@@ -96,6 +97,9 @@ fn write_bytes_from_blocks(filename: &str, blocks: &Vec<[u8; 16]>, stage: Stage)
     while let Some(block) = blocks.next() {
         if blocks.peek().is_none() {
             if let Stage::Decrypt(Some(padding)) = stage {
+                if padding > 16 {
+                    return Err(Error::from(ErrorKind::InvalidInput));
+                }
                 let t = (16 - padding) as usize;
                 if let Err(e) = file.write(&block[..t]) {
                     return Err(e)
@@ -137,5 +141,35 @@ mod tests {
         println!("decrypted bytes: {:?}\npadding:{}", blocks, padding);
         write_bytes_from_blocks("test_decrypted.txt", &blocks, Stage::Decrypt(Some(padding)))
             .expect("Some error in writing");
+    }
+
+    #[test]
+    fn num_cpus() {
+        use std::thread::available_parallelism;
+        let default_parallelism_approx = available_parallelism().unwrap().get();
+
+        println!("Number of availaible parallelism: {}", default_parallelism_approx);
+    }
+
+    #[test]
+    fn thread_pool_test() {
+        extern crate threads_pool;
+        use threads_pool::ThreadPool;
+        use std::thread;
+        use std::time::Duration;
+
+        let pool = ThreadPool::new(4);
+        
+        for i in 1..=10 {
+            println!("Starting thread {}", i);
+            pool.execute(move || {
+                thread::sleep(Duration::from_secs(1));
+                println!("thread {} finished", i);
+            }).unwrap();
+        }
+        
+        drop(pool);
+
+        println!("finished function... All tasks should be completed before this");
     }
 }

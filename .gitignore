@@ -15,6 +15,6 @@
 /src-tauri/target/
 /target/
 
-
+# Test files used to encrypt and decrypt
 **/test*.txt.cryptile
 **/test*.txt
