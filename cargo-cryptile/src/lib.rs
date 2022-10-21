@@ -72,14 +72,26 @@ fn encrypt_chunk_serially(blocks: &mut Vec<[u8; 16]>, cipher: &Aes256) {
         let mut block = GenericArray::from(byte_block.to_owned());
 
         cipher.encrypt_block(&mut block);
-        let mut encrypted_block = [0u8; 16];
         
         for (i, byte) in block.bytes().enumerate() {
             if let Ok(byte) = byte {
-                encrypted_block[i] = byte;
+                (*byte_block)[i] = byte;
             }
         }
-        *byte_block = encrypted_block;
+    }
+}
+
+fn decrypt_chunk_serially(blocks: &mut Vec<[u8; 16]>, cipher: &Aes256) {
+    for byte_block in blocks.iter_mut() {
+        let mut block = GenericArray::from(byte_block.to_owned());
+
+        cipher.decrypt_block(&mut block);
+        
+        for (i, byte) in block.bytes().enumerate() {
+            if let Ok(byte) = byte {
+                (*byte_block)[i] = byte;
+            }
+        }
     }
 }
 
@@ -99,6 +111,33 @@ fn encrypt_chunk_parallelly(blocks: &mut Vec<[u8; 16]>, cipher: &Aes256, n_threa
                 let mut block = GenericArray::from(*(block_ptr).to_owned());
 
                 (*cipher).encrypt_block(&mut block);
+                
+                for (i, byte) in block.bytes().enumerate() {
+                    if let Ok(byte) = byte {
+                        (*block_ptr)[i] = byte;
+                    }
+                }
+            }
+        }).unwrap();
+    }
+}
+
+fn decrypt_chunk_parallelly(blocks: &mut Vec<[u8; 16]>, cipher: &Aes256, n_threads: usize) {
+    let pool = ThreadPool::new(n_threads);
+
+    for byte_block in blocks.iter_mut() {
+        let block_ptr = byte_block as *mut [u8; 16];
+        let block_ptr = block_ptr as usize;
+
+        let cipher_ptr = cipher as *const Aes256;
+        let cipher_ptr = cipher_ptr as usize;
+        pool.execute(move || {
+            let block_ptr = block_ptr as *mut [u8; 16];
+            let cipher = cipher_ptr as *const Aes256;
+            unsafe {
+                let mut block = GenericArray::from(*(block_ptr).to_owned());
+
+                (*cipher).decrypt_block(&mut block);
                 
                 for (i, byte) in block.bytes().enumerate() {
                     if let Ok(byte) = byte {
@@ -212,8 +251,6 @@ fn write_bytes_from_blocks(filename: &str, blocks: &Vec<[u8; 16]>, stage: Stage)
 }
 
 
-
-
 pub mod benches {
     use super::*;
 
@@ -229,12 +266,32 @@ pub mod benches {
     pub fn bench_parallelly_encrypt(filename: &str) {
         let default_parallelism_approx = available_parallelism().unwrap().get();
         // let default_parallelism_approx = 8;
-        let cipher = cipher_init("0123456789ABCDEF");
+        let cipher = cipher_init("0123456789ABCDEF0123456789ABCDEF");
         let mut blocks = read_bytes_as_blocks(filename, Stage::Encrypt)
                                             .expect("Some error in reading");
         encrypt_chunk_parallelly(&mut blocks, &cipher, default_parallelism_approx);
         write_bytes_from_blocks(&(filename.to_owned() + "2.cryptile"), &blocks, Stage::Encrypt)
             .expect("Some error in writing");
+    }
+
+    pub fn bench_serially_decrypt(filename: &str) {
+        let cipher = cipher_init("0123456789ABCDEF0123456789ABCDEF");
+        let mut blocks = read_bytes_as_blocks(&(filename.to_owned() + "1.cryptile"), Stage::Encrypt)
+                                            .expect("Some error in reading");
+        decrypt_chunk_serially(&mut blocks, &cipher);
+        // write_bytes_from_blocks(filename, &blocks, Stage::Encrypt)
+        //     .expect("Some error in writing");
+    }
+
+    pub fn bench_parallelly_decrypt(filename: &str) {
+        let default_parallelism_approx = available_parallelism().unwrap().get();
+        // let default_parallelism_approx = 8;
+        let cipher = cipher_init("0123456789ABCDEF0123456789ABCDEF");
+        let mut blocks = read_bytes_as_blocks(&(filename.to_owned() + "2.cryptile"), Stage::Encrypt)
+                                            .expect("Some error in reading");
+        decrypt_chunk_parallelly(&mut blocks, &cipher, default_parallelism_approx);
+        // write_bytes_from_blocks(filename, &blocks, Stage::Encrypt)
+        //     .expect("Some error in writing");
     }
 
 }
