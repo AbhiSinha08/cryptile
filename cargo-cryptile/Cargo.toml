@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 sha256 = "1.1.1"
 aes = "0.8.1"
-threads_pool = "^0.2.0"
+threads_pool = "0.2.6"
 
 [dev-dependencies]
 criterion = "0.3"
@@ -16,3 +16,4 @@ criterion = "0.3"
 [[bench]]
 name = "benchmark"
 harness = false
+path = "benchmark/benchmark.rs"
