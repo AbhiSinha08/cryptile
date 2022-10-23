@@ -1,5 +1,5 @@
 use std::io::{Read, Write};
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{Error, ErrorKind};
 use std::time::Duration;
 use std::thread::{
@@ -19,6 +19,11 @@ enum Stage {
     Decrypt(Option<u8>)
 }
 
+const SMALL_FILE_SIZE_LIMIT: u64 = 26_214_400 * 3;
+const CHUNK_SIZE: usize = 26_214_400;
+const FILE_EXTENSION: &str = ".cryptile";
+
+
 fn cipher_init(key_str: &str) -> Aes256 {
     let mut key = [0u8; 32];
     for (i, byte) in key_str.bytes().enumerate() {
@@ -28,44 +33,6 @@ fn cipher_init(key_str: &str) -> Aes256 {
     let key = GenericArray::from(key);
     Aes256::new(&key)
 }
-
-
-
-
-
-// TODO
-pub fn encrypt(filename: &str, key: &str) -> Result<(), Error> {
-    let key_hash = sha256::digest(key);
-    let cipher = cipher_init(key);
-
-    Ok(())
-}
-
-pub fn decrypt(filename: &str, key: &str) -> Result<(), Error> {
-    Ok(())
-}
-
-pub fn encrypt_parallel(filename: &str, key: &str) -> Result<(), Error> {
-    Ok(())
-}
-
-pub fn decrypt_parallel(filename: &str, key: &str) -> Result<(), Error> {
-    Ok(())
-}
-
-pub fn encrypt_parallel_with(filename: &str, key: &str, n_threads: usize) -> Result<(), Error> {
-    Ok(())
-}
-
-pub fn decrypt_parallel_with(filename: &str, key: &str, n_threads: usize) -> Result<(), Error> {
-    Ok(())
-}
-
-pub fn is_correct_key(filename: &str, key: &str) -> bool {
-    true
-}
-
-
 
 fn encrypt_chunk_serially(blocks: &mut Vec<[u8; 16]>, cipher: &Aes256) {
     for byte_block in blocks.iter_mut() {
@@ -149,6 +116,192 @@ fn decrypt_chunk_parallelly(blocks: &mut Vec<[u8; 16]>, cipher: &Aes256, n_threa
     }
 }
 
+fn encrypt_small_file(r_file: &mut File, cipher: &Aes256, w_file: &mut File) -> Result<(), Error> {
+    let mut blocks = read_entire_as_blocks(r_file, Stage::Encrypt)?;
+    encrypt_chunk_serially(&mut blocks, &cipher);
+    write_entire_from_blocks(w_file, &blocks, Stage::Encrypt)?;
+
+    Ok(())
+}
+
+fn decrypt_small_file(r_file: &mut File, cipher: &Aes256, w_file: &mut File) -> Result<(), Error> {
+    let mut blocks = read_entire_as_blocks(r_file, Stage::Encrypt)?;
+    decrypt_chunk_serially(&mut blocks, &cipher);
+    write_entire_from_blocks(w_file, &blocks, Stage::Encrypt)?;
+
+    Ok(())
+}
+
+fn hash_encrypt_write(hash: String, cipher: &Aes256, file: &mut File) -> Result<(), Error> {
+    let mut temp_block = [0u8; 16];
+    for (i, byte) in hash[0..16].as_bytes().iter().enumerate() {
+        temp_block[i] = *byte;
+    }
+    let mut block1 = GenericArray::from(temp_block);
+
+    let mut temp_block = [0u8; 16];
+    for (i, byte) in hash[16..32].as_bytes().iter().enumerate() {
+        temp_block[i] = *byte;
+    }
+    let mut block2 = GenericArray::from(temp_block);
+
+    cipher.encrypt_block(&mut block1);
+    cipher.encrypt_block(&mut block2);
+
+    file.write(&block1)?;
+    file.write(&block2)?;
+    Ok(())
+}
+
+fn hash_read_decrypt(cipher: &Aes256, file: &mut File) -> Result<String, Error> {
+    let mut block1 = [0u8; 16];
+    let mut block2 = [0u8; 16];
+    file.read(&mut block1)?;
+    file.read(&mut block2)?;
+
+    let mut block1 = GenericArray::from(block1);
+    let mut block2 = GenericArray::from(block2);
+
+    cipher.decrypt_block(&mut block1);
+    cipher.decrypt_block(&mut block2);
+
+    let key1: String = block1.iter().map(|byte| {
+        *byte as char
+    }).collect();
+    let key2: String = block2.iter().map(|byte| {
+        *byte as char
+    }).collect();
+
+    Ok(key1 + &key2)
+}
+
+
+// TODO
+pub fn encrypt(filename: &str, key: &str) -> Result<(), Error> {
+    let key_hash = sha256::digest(key);
+    let cipher = cipher_init(key);
+    let new_file_name = filename.to_owned() + FILE_EXTENSION;
+
+    let mut reader = File::open(filename)?;
+    let size = reader.metadata()?.len();
+    let mut writer = File::open(&new_file_name)?;
+
+    hash_encrypt_write(key_hash, &cipher, &mut writer)?;
+
+    if size < SMALL_FILE_SIZE_LIMIT {
+        encrypt_small_file(&mut reader, &cipher, &mut writer)?;
+    }
+    else {
+        // encrypt_large_file()?;
+    }
+
+    Ok(())
+}
+
+pub fn decrypt(filename: &str, key: &str) -> Result<(), Error> {
+    let key_hash = sha256::digest(key);
+    let cipher = cipher_init(key);
+
+    if !filename.ends_with(FILE_EXTENSION) {
+        return Err(Error::from(ErrorKind::Unsupported))
+    }
+
+    let new_file_name = filename.replace(FILE_EXTENSION, "");
+
+    let mut reader = File::open(filename)?;
+    let size = reader.metadata()?.len();
+    let mut writer = File::open(&new_file_name)?;
+
+    let hash = hash_read_decrypt(&cipher, &mut reader)?;
+    if key_hash != hash {
+        return Err(Error::from(ErrorKind::InvalidInput))
+    }
+
+    if size < SMALL_FILE_SIZE_LIMIT {
+        decrypt_small_file(&mut reader, &cipher, &mut writer)?;
+    }
+    else {
+        // encrypt_large_file()?;
+    }
+
+    Ok(())
+}
+
+// pub fn encrypt_parallel(filename: &str, key: &str) -> Result<(), Error> {
+//     Ok(())
+// }
+
+// pub fn decrypt_parallel(filename: &str, key: &str) -> Result<(), Error> {
+//     Ok(())
+// }
+
+// pub fn encrypt_parallel_with(filename: &str, key: &str, n_threads: usize) -> Result<(), Error> {
+//     Ok(())
+// }
+
+// pub fn decrypt_parallel_with(filename: &str, key: &str, n_threads: usize) -> Result<(), Error> {
+//     Ok(())
+// }
+
+pub fn is_correct_key(filename: &str, key: &str) -> Result<bool, Error> {
+    let key_hash = sha256::digest(key);
+    let cipher = cipher_init(key);
+    let mut reader = File::open(filename)?;
+
+    let hash = hash_read_decrypt(&cipher, &mut reader)?;
+    if key_hash != hash {
+        return Ok(false)
+    }
+
+    Ok(true)
+}
+
+fn read_entire_as_blocks(file: &mut File, stage: Stage) -> Result<Vec<[u8; 16]>, Error> {
+    let mut bytes = Vec::new();
+
+    loop {
+        let mut block = [0u8; 16];
+        match file.read(&mut block) {
+            Ok(b) if b < 16 => {
+                if let Stage::Encrypt = stage {
+                    let padding = (16 - b) as u8;
+                    block[16 - 1] = padding;
+                    bytes.push(block);
+                }
+                break
+            },
+            Err(e) => return Err(Error::from(e)),
+            Ok(_) => ()
+        }
+        bytes.push(block);
+    }
+    
+    Ok(bytes)
+}
+
+fn write_entire_from_blocks(file: &mut File, blocks: &Vec<[u8; 16]>, stage: Stage) -> Result<(), Error> {
+
+    let mut blocks = blocks.iter().peekable();
+    while let Some(block) = blocks.next() {
+        if blocks.peek().is_none() {
+            if let Stage::Decrypt(Some(padding)) = stage {
+                if padding > 16 {
+                    return Err(Error::from(ErrorKind::InvalidInput));
+                }
+                let t = (16 - padding) as usize;
+                if let Err(e) = file.write(&block[..t]) {
+                    return Err(e)
+                }
+                break
+            }
+        }
+        if let Err(e) = file.write(block) {
+            return Err(e)
+        }
+    }
+
+    Ok(())
+}
 
 
 
@@ -156,7 +309,7 @@ fn decrypt_chunk_parallelly(blocks: &mut Vec<[u8; 16]>, cipher: &Aes256, n_threa
 
 
 
-
+// To be removed
 
 fn read_bytes_as_blocks(filename: &str, stage: Stage) -> Result<Vec<[u8; 16]>, Error> {
     let mut file = File::open(filename)?;
@@ -182,6 +335,36 @@ fn read_bytes_as_blocks(filename: &str, stage: Stage) -> Result<Vec<[u8; 16]>, E
     
     Ok(bytes)
 }
+
+fn write_bytes_from_blocks(filename: &str, blocks: &Vec<[u8; 16]>, stage: Stage) -> Result<(), Error> {
+    let mut file = match File::create(filename) {
+        Ok(file) => file,
+        Err(e) => return Err(e)
+    };
+
+    let mut blocks = blocks.iter().peekable();
+    while let Some(block) = blocks.next() {
+        if blocks.peek().is_none() {
+            if let Stage::Decrypt(Some(padding)) = stage {
+                if padding > 16 {
+                    return Err(Error::from(ErrorKind::InvalidInput));
+                }
+                let t = (16 - padding) as usize;
+                if let Err(e) = file.write(&block[..t]) {
+                    return Err(e)
+                }
+                break
+            }
+        }
+        if let Err(e) = file.write(block) {
+            return Err(e)
+        }
+    }
+
+    Ok(())
+}
+
+
 
 fn encrypt_bytes(blocks: &mut Vec<[u8; 16]>, key: &str) {
     let cipher = cipher_init(key);
@@ -220,34 +403,6 @@ fn decrypt_bytes(blocks: &mut Vec<[u8; 16]>, key: &str) -> u8 {
         padding = decrypted_block.last().unwrap().clone();
     }
     padding
-}
-
-fn write_bytes_from_blocks(filename: &str, blocks: &Vec<[u8; 16]>, stage: Stage) -> Result<(), Error> {
-    let mut file = match File::create(filename) {
-        Ok(file) => file,
-        Err(e) => return Err(e)
-    };
-
-    let mut blocks = blocks.iter().peekable();
-    while let Some(block) = blocks.next() {
-        if blocks.peek().is_none() {
-            if let Stage::Decrypt(Some(padding)) = stage {
-                if padding > 16 {
-                    return Err(Error::from(ErrorKind::InvalidInput));
-                }
-                let t = (16 - padding) as usize;
-                if let Err(e) = file.write(&block[..t]) {
-                    return Err(e)
-                }
-                break
-            }
-        }
-        if let Err(e) = file.write(block) {
-            return Err(e)
-        }
-    }
-
-    Ok(())
 }
 
 
