@@ -33,6 +33,7 @@ impl<'a> Config<'a> {
 
 const HELP_TEXT: &str = "\
                     A Command line tool for encrypting and decrypting your files.\n\
+                    Still In Development. Won't Work\n\
                     \n\
                     Usage:\n\
                     \tcryptile [COMMAND] [FLAGS]\n\

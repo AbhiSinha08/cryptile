@@ -22,4 +22,4 @@
 
 ### CLI Tool:
 - `cd` into 'cargo-cryptile' folder
-- cargo run -- --help
+- `cargo run -- --help`
