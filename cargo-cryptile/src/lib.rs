@@ -1,3 +1,12 @@
+//! Cryptile:
+//! CLI tool for Encrypting and Decrypting files
+//! with a password using AES256 encryption
+//! 
+//! # Example
+//! ```
+//! ```
+
+
 use std::io::{Read, Write};
 use std::fs::{self, File};
 use std::io::{Error, ErrorKind};
@@ -176,7 +185,13 @@ fn hash_read_decrypt(cipher: &Aes256, file: &mut File) -> Result<String, Error> 
 }
 
 
-// TODO
+/// Function to encrypt a file using a 32-bit key
+/// Returns Result type 
+/// 
+/// # Errors
+/// This function will return an appropriate variant of
+/// `std::io::Error` if there is any error reading the file
+/// or creating the encrypted file
 pub fn encrypt(filename: &str, key: &str) -> Result<(), Error> {
     let key_hash = sha256::digest(key);
     let cipher = cipher_init(key);
@@ -198,13 +213,28 @@ pub fn encrypt(filename: &str, key: &str) -> Result<(), Error> {
     Ok(())
 }
 
+/// Function to decrypt a previously ecrypted file using the `encrypt` function
+/// Returns Result type
+/// 
+/// # Errors
+/// This function will return an appropriate variant of
+/// `std::io::Error` if there is any error reading the file
+/// or creating the decrypted file.
+/// 
+/// If the file given as the arguament isn't a file encrypted
+/// with this tool (i.e. not ending with .cryptile),
+/// It will give a `std::io::ErrorKind::Unsupported` error.
+/// 
+/// If the key given as the arguement isn't the key used to
+/// encrypt the file and can't be used as a decryption key,
+/// It will give a `std::io::ErrorKind::InvalidInput` error.
 pub fn decrypt(filename: &str, key: &str) -> Result<(), Error> {
-    let key_hash = sha256::digest(key);
-    let cipher = cipher_init(key);
-
     if !filename.ends_with(FILE_EXTENSION) {
         return Err(Error::from(ErrorKind::Unsupported))
     }
+
+    let key_hash = sha256::digest(key);
+    let cipher = cipher_init(key);
 
     let new_file_name = filename.replace(FILE_EXTENSION, "");
 
@@ -243,7 +273,22 @@ pub fn decrypt(filename: &str, key: &str) -> Result<(), Error> {
 //     Ok(())
 // }
 
+
+/// Function to determine whether a key is correct for an encrypted file
+/// Returns a `Result<bool>` type
+/// 
+/// # Errors
+/// This function will return an appropriate variant of
+/// `std::io::Error` if there is any error reading the file
+/// 
+/// If the file given as the arguament isn't a file encrypted
+/// with this tool (i.e. not ending with .cryptile),
+/// It will give a `std::io::ErrorKind::Unsupported` error.
 pub fn is_correct_key(filename: &str, key: &str) -> Result<bool, Error> {
+    if !filename.ends_with(FILE_EXTENSION) {
+        return Err(Error::from(ErrorKind::Unsupported))
+    }
+
     let key_hash = sha256::digest(key);
     let cipher = cipher_init(key);
     let mut reader = File::open(filename)?;

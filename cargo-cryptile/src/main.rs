@@ -3,19 +3,8 @@ use std::env;
 use std::process;
 use sha256;
 
-struct Config {
-}
-
-impl Config {
-    fn parse(args: &Vec<String>) -> Result<Config, ()> {
-        if args.len() < 3 {
-            return Err(());
-        }
-
-        Ok(Config {
-        })
-    }
-}
+mod config;
+use config::Config;
 
 
 fn main() {
@@ -23,8 +12,8 @@ fn main() {
 
     let config = match Config::parse(&args) {
         Ok(c) => c,
-        Err(_) => {
-            eprintln!("Usage: minigrep <QUERY_STRING> <FILEPATH>");
+        Err(m) => {
+            eprintln!("{}", m);
             process::exit(1);
         }
     };
