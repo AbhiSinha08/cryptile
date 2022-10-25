@@ -11,8 +11,13 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     let config = match Config::parse(&args) {
-        Ok(c) => c,
+        Ok(c) => {
+            eprintln!("\n{:?}", args);
+            println!("{:?}", c);
+            c
+        },
         Err(m) => {
+            eprintln!("\n{:?}", args);
             eprintln!("{}", m);
             process::exit(1);
         }
