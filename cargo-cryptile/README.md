@@ -8,3 +8,7 @@ The file are encrypted using AES256 secure encryption with almost zero overhead.
 
 ## Using Cryptile
 Just run `cargo cryptile --help` for a list of available commands and options.
+
+## Examples
+```cargo cryptile encrypt "file.txt" -p password```
+```cargo cryptile decrypt "file.txt.cryptile" -p password --replace```

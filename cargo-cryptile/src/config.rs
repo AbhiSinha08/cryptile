@@ -50,9 +50,15 @@ fn get_pass<'a>(flag: &'a str, p: Option<&'a String>) -> Option<Pass<'a>> {
 
 impl<'a> Config<'a> {
     pub fn parse(args: &Vec<String>) -> Result<Config, &str> {
-        
+        let mut x = 0;
+        for (i, arg) in args.iter().enumerate() {
+            if arg == "cryptile" {
+                x = i;
+                break;
+            }
+        }
         // Config Parsing Logic
-        let op = match args.get(1).unwrap_or(&"".to_owned()).as_str() {
+        let op = match args.get(x+1).unwrap_or(&"".to_owned()).as_str() {
             "encrypt" => Operation::Encrypt,
             "decrypt" => Operation::Decrypt,
             "set" => Operation::Set,
@@ -68,28 +74,28 @@ impl<'a> Config<'a> {
         };
 
         if op == Operation::Encrypt || op == Operation::Decrypt {
-            if let None = args.get(2) {
+            if let None = args.get(x+2) {
                 return Err(HELP_TEXT)
             }
             let file;
             let pass;
-            match args[2].as_str() {
+            match args[x+2].as_str() {
                 "-p" | "-s" | "--saved" | "-m" | "--master" => {
-                    pass = match get_pass(&args[2], args.get(3)){
+                    pass = match get_pass(&args[x+2], args.get(x+3)){
                         Some(p) => p,
                         _ => return Err(HELP_TEXT)
                     };
-                    file = match args.get(4) {
+                    file = match args.get(x+4) {
                         Some(f) => f.as_str(),
                         _ => return Err(HELP_TEXT)
                     }
                 },
                 filename => {
                     file = filename;
-                    if args.len() < 4 {
+                    if args.len() < x+4 {
                         return Err(HELP_TEXT)
                     }
-                    pass = match get_pass(&args[3], args.get(4)) {
+                    pass = match get_pass(&args[x+3], args.get(x+4)) {
                         Some(p) => p,
                         _ => return Err(HELP_TEXT)
                     }
