@@ -4,6 +4,14 @@
 //! 
 //! # Example
 //! ```
+//! use cargo_cryptile as cryptile;
+//! 
+//! let pass = "password";
+//! let pass: Vec<u8> = (*pass).bytes().collect();
+//! let key = Hash::hash(&pass);
+//! 
+//! cryptile::encrypt("test.txt", &key).unwrap();
+//! cryptile::decrypt("test.txt.cryptile", &key).unwrap();
 //! ```
 
 

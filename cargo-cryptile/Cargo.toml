@@ -2,6 +2,8 @@
 name = "cargo-cryptile"
 version = "0.1.0"
 edition = "2021"
+description = "A CLI Tool to Encrypt and Decrypt files with a secure password."
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
