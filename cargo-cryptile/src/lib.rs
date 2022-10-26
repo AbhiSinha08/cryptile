@@ -10,11 +10,6 @@
 use std::io::{Read, Write};
 use std::fs::{self, File};
 use std::io::{Error, ErrorKind};
-use std::time::Duration;
-use std::thread::{
-    self,
-    available_parallelism
-};
 use threads_pool::ThreadPool;
 use aes::Aes256;
 use aes::cipher::{
@@ -29,7 +24,7 @@ enum Stage {
 }
 
 const SMALL_FILE_SIZE_LIMIT: u64 = 26_214_400 * 3;
-const CHUNK_SIZE: usize = 26_214_400;
+const _CHUNK_SIZE: usize = 26_214_400;
 pub const FILE_EXTENSION: &str = ".cryptile";
 
 
@@ -66,7 +61,7 @@ fn decrypt_chunk_serially(blocks: &mut Vec<[u8; 16]>, cipher: &Aes256) {
     }
 }
 
-fn encrypt_chunk_parallelly(blocks: &mut Vec<[u8; 16]>, cipher: &Aes256, n_threads: usize) {
+fn _encrypt_chunk_parallelly(blocks: &mut Vec<[u8; 16]>, cipher: &Aes256, n_threads: usize) {
     let pool = ThreadPool::new(n_threads);
 
     for byte_block in blocks.iter_mut() {
@@ -93,7 +88,7 @@ fn encrypt_chunk_parallelly(blocks: &mut Vec<[u8; 16]>, cipher: &Aes256, n_threa
     }
 }
 
-fn decrypt_chunk_parallelly(blocks: &mut Vec<[u8; 16]>, cipher: &Aes256, n_threads: usize) {
+fn _decrypt_chunk_parallelly(blocks: &mut Vec<[u8; 16]>, cipher: &Aes256, n_threads: usize) {
     let pool = ThreadPool::new(n_threads);
 
     for byte_block in blocks.iter_mut() {
@@ -262,6 +257,7 @@ pub fn encrypt(filename: &str, key: &[u8; 32]) -> Result<(), Error> {
         encrypt_small_file(&mut reader, &cipher, &mut writer)?;
     }
     else {
+        encrypt_small_file(&mut reader, &cipher, &mut writer)?;
         // encrypt_large_file()?;
     }
 
@@ -306,6 +302,7 @@ pub fn decrypt(filename: &str, key: &[u8; 32]) -> Result<(), Error> {
         decrypt_small_file(&mut reader, &cipher, &mut writer)?;
     }
     else {
+        decrypt_small_file(&mut reader, &cipher, &mut writer)?;
         // encrypt_large_file()?;
     }
 
@@ -365,195 +362,51 @@ pub fn delete(filename: &str) {
 
 
 
-
-
-
-
-// To be removed
-
-fn read_bytes_as_blocks(filename: &str, stage: Stage) -> Result<Vec<[u8; 16]>, Error> {
-    let mut file = File::open(filename)?;
-    
-    let mut bytes = Vec::new();
-
-    loop {
-        let mut block = [0u8; 16];
-        match file.read(&mut block) {
-            Ok(b) if b < 16 => {
-                if let Stage::Encrypt = stage {
-                    let padding = (16 - b) as u8;
-                    block[16 - 1] = padding;
-                    bytes.push(block);
-                }
-                break
-            },
-            Err(e) => return Err(Error::from(e)),
-            Ok(_) => ()
-        }
-        bytes.push(block);
-    }
-    
-    Ok(bytes)
-}
-
-fn write_bytes_from_blocks(filename: &str, blocks: &Vec<[u8; 16]>, stage: Stage) -> Result<(), Error> {
-    let mut file = match File::create(filename) {
-        Ok(file) => file,
-        Err(e) => return Err(e)
-    };
-
-    let mut blocks = blocks.iter().peekable();
-    while let Some(block) = blocks.next() {
-        if blocks.peek().is_none() {
-            if let Stage::Decrypt(Some(padding)) = stage {
-                if padding > 16 {
-                    return Err(Error::from(ErrorKind::InvalidInput));
-                }
-                let t = (16 - padding) as usize;
-                if let Err(e) = file.write(&block[..t]) {
-                    return Err(e)
-                }
-                break
-            }
-        }
-        if let Err(e) = file.write(block) {
-            return Err(e)
-        }
-    }
-
-    Ok(())
-}
-
-
-
-fn encrypt_bytes(blocks: &mut Vec<[u8; 16]>, key_str: &str) {
-    let mut key = [0u8; 32];
-
-    for (i, byte) in key_str.bytes().enumerate() {
-        key[i] = byte;
-    }
-    let cipher = cipher_init(&key);
-
-    for byte_block in blocks.iter_mut() {
-        let mut block = GenericArray::from(byte_block.to_owned());
-
-        cipher.encrypt_block(&mut block);
-        let mut encrypted_block = [0u8; 16];
-        
-        for (i, byte) in block.bytes().enumerate() {
-            if let Ok(byte) = byte {
-                encrypted_block[i] = byte;
-            }
-        }
-        *byte_block = encrypted_block;
-    }
-}
-
-fn decrypt_bytes(blocks: &mut Vec<[u8; 16]>, key_str: &str) -> u8 {
-    let mut key = [0u8; 32];
-
-    for (i, byte) in key_str.bytes().enumerate() {
-        key[i] = byte;
-    }
-    let cipher = cipher_init(&key);
-    let mut padding = 0;
-
-    for byte_block in blocks.iter_mut() {
-        let mut block = GenericArray::from(byte_block.to_owned());
-
-        cipher.decrypt_block(&mut block);
-        let mut decrypted_block = [0u8; 16];
-        
-        for (i, byte) in block.bytes().enumerate() {
-            if let Ok(byte) = byte {
-                decrypted_block[i] = byte;
-            }
-        }
-        *byte_block = decrypted_block;
-        padding = decrypted_block.last().unwrap().clone();
-    }
-    padding
-}
-
-
 pub mod benches {
     use super::*;
 
     pub fn bench_serially_encrypt(filename: &str) {
-        let pass: Vec<u8> = "0123456789ABCDEF".bytes().collect();
+        let pass = "0123456789ABCDEF";
+        let pass: Vec<u8> = (*pass).bytes().collect();
         let key = Hash::hash(&pass);
-        let cipher = cipher_init(&key);
-        let mut blocks = read_bytes_as_blocks(filename, Stage::Encrypt)
-                                            .expect("Some error in reading");
-        encrypt_chunk_serially(&mut blocks, &cipher);
-        write_bytes_from_blocks(&(filename.to_owned() + "1.cryptile"), &blocks, Stage::Encrypt)
-            .expect("Some error in writing");
+        encrypt(filename, &key).expect("Error in Encrypting");
     }
 
-    pub fn bench_parallelly_encrypt(filename: &str) {
-        let default_parallelism_approx = available_parallelism().unwrap().get();
-        // let default_parallelism_approx = 8;
-        let pass: Vec<u8> = "0123456789ABCDEF".bytes().collect();
-        let key = Hash::hash(&pass);
-        let cipher = cipher_init(&key);
-        let mut blocks = read_bytes_as_blocks(filename, Stage::Encrypt)
-                                            .expect("Some error in reading");
-        encrypt_chunk_parallelly(&mut blocks, &cipher, default_parallelism_approx);
-        write_bytes_from_blocks(&(filename.to_owned() + "2.cryptile"), &blocks, Stage::Encrypt)
-            .expect("Some error in writing");
-    }
+    // pub fn bench_parallelly_encrypt(filename: &str) {}
 
     pub fn bench_serially_decrypt(filename: &str) {
-        let pass: Vec<u8> = "0123456789ABCDEF".bytes().collect();
+        let pass = "0123456789ABCDEF";
+        let pass: Vec<u8> = (*pass).bytes().collect();
         let key = Hash::hash(&pass);
-        let cipher = cipher_init(&key);
-        let mut blocks = read_bytes_as_blocks(&(filename.to_owned() + "1.cryptile"), Stage::Encrypt)
-                                            .expect("Some error in reading");
-        decrypt_chunk_serially(&mut blocks, &cipher);
-        // write_bytes_from_blocks(filename, &blocks, Stage::Encrypt)
-        //     .expect("Some error in writing");
+        decrypt(filename, &key).expect("Error in Decrypting");
     }
 
-    pub fn bench_parallelly_decrypt(filename: &str) {
-        let default_parallelism_approx = available_parallelism().unwrap().get();
-        // let default_parallelism_approx = 8;
-        let pass: Vec<u8> = "0123456789ABCDEF".bytes().collect();
-        let key = Hash::hash(&pass);
-        let cipher = cipher_init(&key);
-        let mut blocks = read_bytes_as_blocks(&(filename.to_owned() + "2.cryptile"), Stage::Encrypt)
-                                            .expect("Some error in reading");
-        decrypt_chunk_parallelly(&mut blocks, &cipher, default_parallelism_approx);
-        // write_bytes_from_blocks(filename, &blocks, Stage::Encrypt)
-        //     .expect("Some error in writing");
-    }
+    // pub fn bench_parallelly_decrypt(filename: &str) {}
 
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
+    use std::thread;
+    use std::thread::available_parallelism;
     const TEST_KEY: &str = "0123456789ABCDEF0123456789ABCDEF";
 
     #[test]
     fn encrypt_file() {
-        let mut blocks = read_bytes_as_blocks("test.txt", Stage::Encrypt)
-                                            .expect("Some error in reading");
-        println!("bytes: {:?}", blocks);
-        encrypt_bytes(&mut blocks, TEST_KEY);
-        println!("encrypted bytes: {:?}", blocks);
-        write_bytes_from_blocks("test.txt.cryptile", &blocks, Stage::Encrypt)
-            .expect("Some error in writing");
+        let pass = "0123456789ABCDEF";
+        let pass: Vec<u8> = (*pass).bytes().collect();
+        let key = Hash::hash(&pass);
+        encrypt("test.jpg", &key).expect("Error in Encrypting");
     }
 
     #[test]
     fn decrypt_file() {
-        let mut blocks = read_bytes_as_blocks("test2.jpg.cryptile", Stage::Decrypt(None))
-                                            .expect("Some error in reading");
-        println!("bytes: {:?}", blocks);
-        let padding = decrypt_bytes(&mut blocks, TEST_KEY);
-        println!("decrypted bytes: {:?}\npadding:{}", blocks, padding);
-        write_bytes_from_blocks("test2_decrypted.jpg", &blocks, Stage::Decrypt(Some(padding)))
-            .expect("Some error in writing");
+        let pass = "0123456789ABCDEF";
+        let pass: Vec<u8> = (*pass).bytes().collect();
+        let key = Hash::hash(&pass);
+        decrypt("test.jpg.cryptile", &key).expect("Error in Decrypting");
     }
 
     #[test]
