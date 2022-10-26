@@ -1,3 +1,5 @@
+use hmac_sha256::Hash;
+
 #[derive(Debug)]
 enum Pass<'a> {
     Saved {
@@ -10,7 +12,7 @@ enum Pass<'a> {
 }
 
 #[derive(PartialEq, Debug)]
-enum Operation<'a> {
+pub enum Operation<'a> {
     Encrypt,
     Decrypt,
     Set,
@@ -19,7 +21,7 @@ enum Operation<'a> {
 
 #[derive(Debug)]
 pub struct Config<'a> {
-    operation: Operation<'a>,
+    pub operation: Operation<'a>,
     file: Option<&'a str>,
     pass: Option<Pass<'a>>,
     replace: bool,
@@ -111,13 +113,39 @@ impl<'a> Config<'a> {
 
         return Err(HELP_TEXT);
     }
+
+    pub fn get_key(&self) -> Result<[u8; 32], &str> {
+        match self.pass.as_ref().unwrap() {
+            Pass::Given { given } => {
+                let pass: Vec<u8> = (*given).bytes().collect();
+                return Ok(Hash::hash(&pass))
+            },
+            Pass::Saved { identifier } => {
+                // TODO
+            },
+            Pass::Master => {
+                //TODO
+            }
+        };
+
+        Err("Error Getting Password")
+    }
+
+    pub fn file(&self) -> Option<&str> {
+        self.file
+    }
+
+    pub fn replace(&self) -> bool {
+        self.replace
+    }
 }
+
 
 
 
 const HELP_TEXT: &str = "\
         A Command line tool for encrypting and decrypting your files.\n\
-        (Still In Development. Won't Work.)\n\
+        (Still In Development. set command and saved passwords won't work.)\n\
         \n\
         Usage:\n\
         \tcryptile [COMMAND] [FLAGS]\n\
