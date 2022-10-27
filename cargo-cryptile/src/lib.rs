@@ -31,8 +31,8 @@ enum Stage {
     Decrypt(Option<u8>)
 }
 
-const SMALL_FILE_SIZE_LIMIT: u64 = 26_214_400 * 3;
-const _CHUNK_SIZE: usize = 26_214_400;
+const SMALL_FILE_SIZE_LIMIT: u64 = 26_214_400 * 2;
+const CHUNK_SIZE: usize = 26_214_400;
 pub const FILE_EXTENSION: &str = ".cryptile";
 
 
@@ -131,6 +131,21 @@ fn encrypt_small_file(r_file: &mut File, cipher: &Aes256, w_file: &mut File) -> 
     Ok(())
 }
 
+fn encrypt_large_file(r_file: &mut File, cipher: &Aes256, w_file: &mut File) -> Result<(), Error> {
+    println!("Encrypting large file in parts...");
+    loop {
+        let (mut blocks, cont) = read_chunk_as_blocks(r_file, Stage::Encrypt)?;
+        encrypt_chunk_serially(&mut blocks, &cipher);
+        write_entire_from_blocks(w_file, &blocks, Stage::Encrypt)?;
+
+        if !cont {
+            break
+        }
+    }
+        
+    Ok(())
+}
+
 fn decrypt_small_file(r_file: &mut File, cipher: &Aes256, w_file: &mut File) -> Result<(), Error> {
     let mut blocks = read_entire_as_blocks(r_file, Stage::Decrypt(None))?;
     decrypt_chunk_serially(&mut blocks, &cipher);
@@ -145,6 +160,32 @@ fn decrypt_small_file(r_file: &mut File, cipher: &Aes256, w_file: &mut File) -> 
     }
     else {
         return Err(Error::from(ErrorKind::UnexpectedEof))
+    }
+    Ok(())
+}
+
+fn decrypt_large_file(r_file: &mut File, cipher: &Aes256, w_file: &mut File) -> Result<(), Error> {
+    println!("Decrypting large file in parts...");
+    loop {
+        let (mut blocks, cont) = read_chunk_as_blocks(r_file, Stage::Decrypt(None))?;
+        decrypt_chunk_serially(&mut blocks, &cipher);
+
+        if !cont {
+            let last_block = blocks.last();
+            if let Some(block) = last_block {
+                if let Some(padding) = block.last() {
+                    write_entire_from_blocks(w_file, &blocks, Stage::Decrypt(Some(*padding)))?;
+                }
+                else {
+                    return Err(Error::from(ErrorKind::UnexpectedEof))
+                }
+            }
+            else {
+                return Err(Error::from(ErrorKind::UnexpectedEof))
+            }
+            break
+        }
+        write_entire_from_blocks(w_file, &blocks, Stage::Decrypt(None))?;
     }
     Ok(())
 }
@@ -219,6 +260,35 @@ fn read_entire_as_blocks(file: &mut File, stage: Stage) -> Result<Vec<[u8; 16]>,
     Ok(bytes)
 }
 
+fn read_chunk_as_blocks(file: &mut File, stage: Stage) -> Result<(Vec<[u8; 16]>, bool), Error> {
+    let mut bytes = Vec::new();
+    let n_blocks = CHUNK_SIZE / 16;
+    let mut cont = true;
+
+    loop {
+        let mut block = [0u8; 16];
+        match file.read(&mut block) {
+            Ok(b) if b < 16 => {
+                if let Stage::Encrypt = stage {
+                    let padding = (16 - b) as u8;
+                    block[16 - 1] = padding;
+                    bytes.push(block);
+                }
+                cont = false;
+                break
+            },
+            Err(e) => return Err(Error::from(e)),
+            Ok(_) => ()
+        }
+        bytes.push(block);
+        if bytes.len() >= n_blocks {
+            break
+        }
+    }
+    
+    Ok((bytes, cont))
+}
+
 fn write_entire_from_blocks(file: &mut File, blocks: &Vec<[u8; 16]>, stage: Stage) -> Result<(), Error> {
 
     let mut blocks = blocks.iter().peekable();
@@ -265,8 +335,7 @@ pub fn encrypt(filename: &str, key: &[u8; 32]) -> Result<(), Error> {
         encrypt_small_file(&mut reader, &cipher, &mut writer)?;
     }
     else {
-        encrypt_small_file(&mut reader, &cipher, &mut writer)?;
-        // encrypt_large_file()?;
+        encrypt_large_file(&mut reader, &cipher, &mut writer)?;
     }
 
     Ok(())
@@ -310,8 +379,7 @@ pub fn decrypt(filename: &str, key: &[u8; 32]) -> Result<(), Error> {
         decrypt_small_file(&mut reader, &cipher, &mut writer)?;
     }
     else {
-        decrypt_small_file(&mut reader, &cipher, &mut writer)?;
-        // encrypt_large_file()?;
+        decrypt_large_file(&mut reader, &cipher, &mut writer)?;
     }
 
     Ok(())
