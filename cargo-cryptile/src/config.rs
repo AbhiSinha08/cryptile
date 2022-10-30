@@ -1,29 +1,55 @@
+use directories::ProjectDirs;
 use hmac_sha256::Hash;
+use std::io::Write;
+use std::path::PathBuf;
+use std::fs::{self, File};
+use toml;
+use serde::Deserialize;
 
-#[derive(Debug)]
-enum Pass<'a> {
-    Saved {
-        identifier: &'a str
-    },
-    Given {
-        given: &'a str
-    },
-    Master
+fn config_path() -> Option<PathBuf> {
+    if let Some(proj_dirs) = ProjectDirs::from("com", "cryptile", "cryptile") {
+        let mut path = proj_dirs.config_dir().to_owned();
+        path.push("saved.toml");
+        return Some(path);
+
+        // Linux:   /home/username/.config/cryptile/saved.toml
+        // Windows: C:\Users\Username\AppData\Roaming\cryptile\cryptile\saved.toml
+        // macOS:   /Users/Username/Library/Application Support/com.cryptile.cryptile/saved.toml
+    }
+    None
 }
 
-#[derive(PartialEq, Debug)]
+enum Pass<'a> {
+    Saved { identifier: &'a str },
+    Given { given: &'a str },
+    Master,
+}
+
+#[derive(Deserialize)]
+struct Key {
+    key: [u8; 32],
+    identifier: String
+}
+
+#[derive(Deserialize)]
+struct SavedConfig {
+    master: Option<[u8; 32]>,
+    keys: Option<Vec<Key>>
+}
+
+#[derive(PartialEq)]
 pub enum Operation<'a> {
     Encrypt,
     Decrypt,
     Set,
-    Help(&'a str)
+    Help(&'a str),
 }
 
-#[derive(Debug)]
 pub struct Config<'a> {
     pub operation: Operation<'a>,
     file: Option<&'a str>,
     pass: Option<Pass<'a>>,
+    saved: Option<SavedConfig>,
     replace: bool,
 }
 
@@ -31,20 +57,51 @@ fn get_pass<'a>(flag: &'a str, p: Option<&'a String>) -> Option<Pass<'a>> {
     match flag {
         "-p" => {
             if let None = p {
-                return None
+                return None;
             }
-            return Some(Pass::Given { given: p.unwrap() })
-        },
+            return Some(Pass::Given { given: p.unwrap() });
+        }
         "-s" | "--saved" => {
             if let None = p {
-                return None
+                return None;
             }
-            return Some(Pass::Saved { identifier: p.unwrap() })
-        },
-        "-m" | "--master" => {
-            return Some(Pass::Master)
-        },
-        _ => return None
+            return Some(Pass::Saved {
+                identifier: p.unwrap(),
+            });
+        }
+        "-m" | "--master" => return Some(Pass::Master),
+        _ => return None,
+    }
+}
+
+fn get_saved_pass() -> Result<SavedConfig, &'static str> {
+    let path = match config_path() {
+        Some(p) => p,
+        None => {
+            return Err("Error: No valid path for config file\
+                        could be retrieved from\
+                        the operating system")
+        }
+    };
+    if !path.exists() {
+        if let Err(_) = fs::create_dir_all(path.parent().unwrap()) {
+            return Err("Error creating config file")
+        }
+
+        if let Err(_) = File::create(&path) {
+            return Err("Error creating config file")
+        }
+    }
+    let config_file = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(_) => return Err("Error Reading the config file")
+    };
+    match toml::from_str(&config_file) {
+        Ok(s) => Ok(s),
+        Err(e) => {
+            eprintln!("{}", e);
+            return Err("Error parsing the Config File.")
+        }
     }
 }
 
@@ -58,7 +115,7 @@ impl<'a> Config<'a> {
             }
         }
         // Config Parsing Logic
-        let op = match args.get(x+1).unwrap_or(&"".to_owned()).as_str() {
+        let op = match args.get(x + 1).unwrap_or(&"".to_owned()).as_str() {
             "encrypt" => Operation::Encrypt,
             "decrypt" => Operation::Decrypt,
             "set" => Operation::Set,
@@ -67,37 +124,38 @@ impl<'a> Config<'a> {
                     operation: Operation::Help(HELP_TEXT),
                     file: None,
                     pass: None,
-                    replace: false
+                    saved: None,
+                    replace: false,
                 })
-            },
-            _ => return Err(HELP_TEXT)
+            }
+            _ => return Err(HELP_TEXT),
         };
 
         if op == Operation::Encrypt || op == Operation::Decrypt {
-            if let None = args.get(x+2) {
-                return Err(HELP_TEXT)
+            if let None = args.get(x + 2) {
+                return Err(HELP_TEXT);
             }
             let file;
             let pass;
-            match args[x+2].as_str() {
+            match args[x + 2].as_str() {
                 "-p" | "-s" | "--saved" | "-m" | "--master" => {
-                    pass = match get_pass(&args[x+2], args.get(x+3)){
+                    pass = match get_pass(&args[x + 2], args.get(x + 3)) {
                         Some(p) => p,
-                        _ => return Err(HELP_TEXT)
+                        _ => return Err(HELP_TEXT),
                     };
-                    file = match args.get(x+4) {
+                    file = match args.get(x + 4) {
                         Some(f) => f.as_str(),
-                        _ => return Err(HELP_TEXT)
+                        _ => return Err(HELP_TEXT),
                     }
-                },
+                }
                 filename => {
                     file = filename;
-                    if args.len() < x+4 {
-                        return Err(HELP_TEXT)
+                    if args.len() < x + 4 {
+                        return Err(HELP_TEXT);
                     }
-                    pass = match get_pass(&args[x+3], args.get(x+4)) {
+                    pass = match get_pass(&args[x + 3], args.get(x + 4)) {
                         Some(p) => p,
-                        _ => return Err(HELP_TEXT)
+                        _ => return Err(HELP_TEXT),
                     }
                 }
             };
@@ -107,15 +165,26 @@ impl<'a> Config<'a> {
                 operation: op,
                 file: Some(file),
                 pass: Some(pass),
-                replace
-            })
+                saved: None,
+                replace,
+            });
         }
-
 
         if op == Operation::Set {
+            let saved = match get_saved_pass() {
+                Ok(s) => s,
+                Err(m) => return Err(m)
+            };
+
+            return Ok(Config {
+                operation: op,
+                file: None,
+                pass: None,
+                saved: Some(saved),
+                replace: false
+            })
             // TODO
         }
-
 
         return Err(HELP_TEXT);
     }
@@ -124,11 +193,11 @@ impl<'a> Config<'a> {
         match self.pass.as_ref().unwrap() {
             Pass::Given { given } => {
                 let pass: Vec<u8> = (*given).bytes().collect();
-                return Ok(Hash::hash(&pass))
-            },
+                return Ok(Hash::hash(&pass));
+            }
             Pass::Saved { identifier } => {
                 // TODO
-            },
+            }
             Pass::Master => {
                 //TODO
             }
@@ -145,9 +214,6 @@ impl<'a> Config<'a> {
         self.replace
     }
 }
-
-
-
 
 const HELP_TEXT: &str = "\
         A Command line tool for encrypting and decrypting your files.\n\
@@ -170,3 +236,4 @@ const HELP_TEXT: &str = "\
         \t-h, --help                                  Display this help information\n\
         \t--replace                                   Remove the original file after Encryption/Decryption\n\
           ";
+

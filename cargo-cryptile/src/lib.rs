@@ -69,59 +69,59 @@ fn decrypt_chunk_serially(blocks: &mut Vec<[u8; 16]>, cipher: &Aes256) {
     }
 }
 
-fn _encrypt_chunk_parallelly(blocks: &mut Vec<[u8; 16]>, cipher: &Aes256, n_threads: usize) {
-    let pool = ThreadPool::new(n_threads);
+// fn encrypt_chunk_parallelly(blocks: &mut Vec<[u8; 16]>, cipher: &Aes256, n_threads: usize) {
+//     let pool = ThreadPool::new(n_threads);
 
-    for byte_block in blocks.iter_mut() {
-        let block_ptr = byte_block as *mut [u8; 16];
-        let block_ptr = block_ptr as usize;
+//     for byte_block in blocks.iter_mut() {
+//         let block_ptr = byte_block as *mut [u8; 16];
+//         let block_ptr = block_ptr as usize;
 
-        let cipher_ptr = cipher as *const Aes256;
-        let cipher_ptr = cipher_ptr as usize;
-        pool.execute(move || {
-            let block_ptr = block_ptr as *mut [u8; 16];
-            let cipher = cipher_ptr as *const Aes256;
-            unsafe {
-                let mut block = GenericArray::from(*(block_ptr).to_owned());
+//         let cipher_ptr = cipher as *const Aes256;
+//         let cipher_ptr = cipher_ptr as usize;
+//         pool.execute(move || {
+//             let block_ptr = block_ptr as *mut [u8; 16];
+//             let cipher = cipher_ptr as *const Aes256;
+//             unsafe {
+//                 let mut block = GenericArray::from(*(block_ptr).to_owned());
 
-                (*cipher).encrypt_block(&mut block);
+//                 (*cipher).encrypt_block(&mut block);
                 
-                for (i, byte) in block.bytes().enumerate() {
-                    if let Ok(byte) = byte {
-                        (*block_ptr)[i] = byte;
-                    }
-                }
-            }
-        }).unwrap();
-    }
-}
+//                 for (i, byte) in block.bytes().enumerate() {
+//                     if let Ok(byte) = byte {
+//                         (*block_ptr)[i] = byte;
+//                     }
+//                 }
+//             }
+//         }).unwrap();
+//     }
+// }
 
-fn _decrypt_chunk_parallelly(blocks: &mut Vec<[u8; 16]>, cipher: &Aes256, n_threads: usize) {
-    let pool = ThreadPool::new(n_threads);
+// fn decrypt_chunk_parallelly(blocks: &mut Vec<[u8; 16]>, cipher: &Aes256, n_threads: usize) {
+//     let pool = ThreadPool::new(n_threads);
 
-    for byte_block in blocks.iter_mut() {
-        let block_ptr = byte_block as *mut [u8; 16];
-        let block_ptr = block_ptr as usize;
+//     for byte_block in blocks.iter_mut() {
+//         let block_ptr = byte_block as *mut [u8; 16];
+//         let block_ptr = block_ptr as usize;
 
-        let cipher_ptr = cipher as *const Aes256;
-        let cipher_ptr = cipher_ptr as usize;
-        pool.execute(move || {
-            let block_ptr = block_ptr as *mut [u8; 16];
-            let cipher = cipher_ptr as *const Aes256;
-            unsafe {
-                let mut block = GenericArray::from(*(block_ptr).to_owned());
+//         let cipher_ptr = cipher as *const Aes256;
+//         let cipher_ptr = cipher_ptr as usize;
+//         pool.execute(move || {
+//             let block_ptr = block_ptr as *mut [u8; 16];
+//             let cipher = cipher_ptr as *const Aes256;
+//             unsafe {
+//                 let mut block = GenericArray::from(*(block_ptr).to_owned());
 
-                (*cipher).decrypt_block(&mut block);
+//                 (*cipher).decrypt_block(&mut block);
                 
-                for (i, byte) in block.bytes().enumerate() {
-                    if let Ok(byte) = byte {
-                        (*block_ptr)[i] = byte;
-                    }
-                }
-            }
-        }).unwrap();
-    }
-}
+//                 for (i, byte) in block.bytes().enumerate() {
+//                     if let Ok(byte) = byte {
+//                         (*block_ptr)[i] = byte;
+//                     }
+//                 }
+//             }
+//         }).unwrap();
+//     }
+// }
 
 fn encrypt_small_file(r_file: &mut File, cipher: &Aes256, w_file: &mut File) -> Result<(), Error> {
     let mut blocks = read_entire_as_blocks(r_file, Stage::Encrypt)?;
