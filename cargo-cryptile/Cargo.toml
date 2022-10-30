@@ -1,6 +1,6 @@
 [package]
 name = "cargo-cryptile"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2021"
 description = "A CLI Tool to Encrypt and Decrypt files with a secure password."
 license = "MIT"
