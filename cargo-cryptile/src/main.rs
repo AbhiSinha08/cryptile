@@ -1,10 +1,11 @@
 use cargo_cryptile as cryptile;
 use std::env;
 use std::process;
-use std::io::ErrorKind;
+use std::io::{self, ErrorKind, Write};
+use dialoguer::Password;
 
 mod config;
-use config::{Config, Operation};
+use config::{Config, Operation, Pass};
 
 
 impl<'a> Config<'a> {
@@ -23,10 +24,37 @@ impl<'a> Config<'a> {
     }
 }
 
+fn get_pass_input() -> String {
+    let password = Password::new().with_prompt("Enter a password")
+        .with_confirmation("Confirm password", "Passwords mismatching")
+        .interact();
+
+    match password {
+        Err(_) => {
+            eprintln!("Cannot read from the stdin");
+            process::exit(1)
+        }
+        Ok(password) => password
+    }
+}
+
+fn get_input(s: &str) -> String {
+    print!("{}", s);
+    io::stdout().flush().unwrap();
+
+    let mut input = String::new();
+
+    if let Err(_) = io::stdin().read_line(&mut input) {
+        eprintln!("Cannot read from the stdin");
+        process::exit(1)
+    }
+    input.trim().to_owned()
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
 
-    let config = match Config::parse(&args) {
+    let mut config = match Config::parse(&args) {
         Ok(c) => c,
         Err(m) => {
             eprintln!("{}", m);
@@ -104,7 +132,32 @@ fn main() {
             }
         }
         Operation::Set => {
-            // TODO
+            match config.pass.as_ref().unwrap() {
+                Pass::Master => {
+                    let pass = get_pass_input();
+                    config.set_pass(pass, None);
+                }
+                Pass::Saved { identifier: _ } => {
+                    let pass = get_pass_input();
+                    let id = get_input("Enter an identifier: ");
+                    config.set_pass(pass, Some(id));
+                }
+                _ => ()
+            }
         }
+    }
+}
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pw_input() {
+        let p = get_pass_input();
+
+        println!("start->{}<-end", p);
     }
 }

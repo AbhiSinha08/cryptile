@@ -5,6 +5,7 @@
 //! # Example
 //! ```
 //! use cargo_cryptile as cryptile;
+//! use hmac_sha256::Hash;
 //! 
 //! let pass = "password";
 //! let pass: Vec<u8> = (*pass).bytes().collect();
@@ -18,7 +19,6 @@
 use std::io::{Read, Write};
 use std::fs::{self, File};
 use std::io::{Error, ErrorKind};
-use threads_pool::ThreadPool;
 use aes::Aes256;
 use aes::cipher::{
     BlockEncrypt, BlockDecrypt, KeyInit,
@@ -68,6 +68,8 @@ fn decrypt_chunk_serially(blocks: &mut Vec<[u8; 16]>, cipher: &Aes256) {
         }
     }
 }
+
+// use threads_pool::ThreadPool;
 
 // fn encrypt_chunk_parallelly(blocks: &mut Vec<[u8; 16]>, cipher: &Aes256, n_threads: usize) {
 //     let pool = ThreadPool::new(n_threads);
@@ -467,6 +469,7 @@ mod tests {
     use std::time::Duration;
     use std::thread;
     use std::thread::available_parallelism;
+    use threads_pool::ThreadPool;
     const TEST_KEY: &str = "0123456789ABCDEF0123456789ABCDEF";
 
     #[test]

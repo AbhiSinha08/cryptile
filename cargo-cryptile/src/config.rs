@@ -1,40 +1,59 @@
 use directories::ProjectDirs;
 use hmac_sha256::Hash;
+use serde::Deserialize;
+use serde::Serialize;
+use std::fs::{self, File};
 use std::io::Write;
 use std::path::PathBuf;
-use std::fs::{self, File};
 use toml;
-use serde::Deserialize;
 
 fn config_path() -> Option<PathBuf> {
     if let Some(proj_dirs) = ProjectDirs::from("com", "cryptile", "cryptile") {
         let mut path = proj_dirs.config_dir().to_owned();
-        path.push("saved.toml");
+        path.push(".saved.toml");
         return Some(path);
 
-        // Linux:   /home/username/.config/cryptile/saved.toml
-        // Windows: C:\Users\Username\AppData\Roaming\cryptile\cryptile\saved.toml
-        // macOS:   /Users/Username/Library/Application Support/com.cryptile.cryptile/saved.toml
+        // Linux:   /home/username/.config/cryptile/.saved.toml
+        // Windows: C:\Users\Username\AppData\Roaming\cryptile\cryptile\.saved.toml
+        // macOS:   /Users/Username/Library/Application Support/com.cryptile.cryptile/.saved.toml
     }
     None
 }
 
-enum Pass<'a> {
-    Saved { identifier: &'a str },
+#[derive(PartialEq)]
+pub enum Pass<'a> {
+    Saved { identifier: Option<&'a str> },
     Given { given: &'a str },
     Master,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct Key {
     key: [u8; 32],
-    identifier: String
+    identifier: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct SavedConfig {
     master: Option<[u8; 32]>,
-    keys: Option<Vec<Key>>
+    keys: Option<Vec<Key>>,
+}
+
+impl SavedConfig {
+    fn search(&self, id: &str) -> Option<[u8; 32]> {
+        match self.keys
+                    .as_ref()
+                    .unwrap()
+                    .iter()
+                    .filter(|k| {
+                        (*k).identifier == id
+                    })
+                    .next()
+        {
+            None => None,
+            Some(k) => Some(k.key)
+        }
+    }
 }
 
 #[derive(PartialEq)]
@@ -48,7 +67,7 @@ pub enum Operation<'a> {
 pub struct Config<'a> {
     pub operation: Operation<'a>,
     file: Option<&'a str>,
-    pass: Option<Pass<'a>>,
+    pub pass: Option<Pass<'a>>,
     saved: Option<SavedConfig>,
     replace: bool,
 }
@@ -66,7 +85,7 @@ fn get_pass<'a>(flag: &'a str, p: Option<&'a String>) -> Option<Pass<'a>> {
                 return None;
             }
             return Some(Pass::Saved {
-                identifier: p.unwrap(),
+                identifier: Some(p.unwrap()),
             });
         }
         "-m" | "--master" => return Some(Pass::Master),
@@ -85,22 +104,22 @@ fn get_saved_pass() -> Result<SavedConfig, &'static str> {
     };
     if !path.exists() {
         if let Err(_) = fs::create_dir_all(path.parent().unwrap()) {
-            return Err("Error creating config file")
+            return Err("Error creating config file");
         }
 
         if let Err(_) = File::create(&path) {
-            return Err("Error creating config file")
+            return Err("Error creating config file");
         }
     }
     let config_file = match fs::read_to_string(path) {
         Ok(s) => s,
-        Err(_) => return Err("Error Reading the config file")
+        Err(_) => return Err("Error Reading the config file"),
     };
     match toml::from_str(&config_file) {
         Ok(s) => Ok(s),
         Err(e) => {
             eprintln!("{}", e);
-            return Err("Error parsing the Config File.")
+            return Err("Error parsing the Config File.");
         }
     }
 }
@@ -171,19 +190,29 @@ impl<'a> Config<'a> {
         }
 
         if op == Operation::Set {
+            if let None = args.get(x + 2) {
+                return Err(HELP_TEXT);
+            }
+
             let saved = match get_saved_pass() {
                 Ok(s) => s,
-                Err(m) => return Err(m)
+                Err(m) => return Err(m),
             };
+
+            let pass;
+            match args[x + 2].as_str() {
+                "-p" => pass = Pass::Saved { identifier: None },
+                "-m" | "--master" => pass = Pass::Master,
+                _ => return Err(HELP_TEXT),
+            }
 
             return Ok(Config {
                 operation: op,
                 file: None,
-                pass: None,
+                pass: Some(pass),
                 saved: Some(saved),
-                replace: false
-            })
-            // TODO
+                replace: false,
+            });
         }
 
         return Err(HELP_TEXT);
@@ -196,14 +225,62 @@ impl<'a> Config<'a> {
                 return Ok(Hash::hash(&pass));
             }
             Pass::Saved { identifier } => {
-                // TODO
+                let saved = match get_saved_pass() {
+                    Ok(s) => s,
+                    Err(m) => return Err(m),
+                };
+
+                match saved.keys {
+                    Some(_) => {
+                        match saved.search(identifier.unwrap()) {
+                            Some(k) => Ok(k),
+                            None => Err("No saved password with the given identifier found")
+                        }
+                    }
+                    None => Err("No Passwords saved.\n\
+                                Save one using `cryptile set -p` command")  
+                }
             }
             Pass::Master => {
-                //TODO
-            }
-        };
+                let saved = match get_saved_pass() {
+                    Ok(s) => s,
+                    Err(m) => return Err(m),
+                };
 
-        Err("Error Getting Password")
+                match saved.master {
+                    Some(m) => Ok(m),
+                    None => Err("No master password set.\n\
+                                Set one using `cryptile set -m` command"),
+                }
+            }
+        }
+    }
+
+    pub fn set_pass(&mut self, pass: String, id: Option<String>) {
+        if self.operation == Operation::Set {
+            let pass: Vec<u8> = pass.bytes().collect();
+            let pass = Hash::hash(&pass);
+
+            if let Some(Pass::Master) = self.pass {
+                let mut saved = self.saved.take().unwrap();
+                saved.master = Some(pass);
+                self.saved = Some(saved);
+            } else if let Some(Pass::Saved { identifier: _ }) = self.pass {
+                let mut saved = self.saved.take().unwrap();
+
+                let mut keys = match saved.keys {
+                    Some(keys) => keys,
+                    None => Vec::new(),
+                };
+
+                keys.push(Key {
+                    key: pass,
+                    identifier: id.unwrap(),
+                });
+                saved.keys = Some(keys);
+                self.saved = Some(saved);
+            }
+        }
     }
 
     pub fn file(&self) -> Option<&str> {
@@ -215,9 +292,22 @@ impl<'a> Config<'a> {
     }
 }
 
+impl<'a> Drop for Config<'a> {
+    fn drop(&mut self) {
+        if let Some(saved) = &self.saved {
+            let config_file = toml::to_string(saved).unwrap();
+
+            let path = config_path().unwrap();
+            File::create(path)
+                .unwrap()
+                .write(config_file.as_bytes())
+                .unwrap();
+        }
+    }
+}
+
 const HELP_TEXT: &str = "\
         A Command line tool for encrypting and decrypting your files.\n\
-        (Still In Development. set command and saved passwords won't work.)\n\
         \n\
         Usage:\n\
         \tcryptile [COMMAND] [FLAGS]\n\
@@ -236,4 +326,3 @@ const HELP_TEXT: &str = "\
         \t-h, --help                                  Display this help information\n\
         \t--replace                                   Remove the original file after Encryption/Decryption\n\
           ";
-
